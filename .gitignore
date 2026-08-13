@@ -1,0 +1,4 @@
+/dist/
+/xcode-sync
+*.test
+.DS_Store

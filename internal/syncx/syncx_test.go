@@ -13,6 +13,7 @@ import (
 
 type fakeDefaults struct {
 	preferences map[string]PreferenceEntry
+	missingText string
 }
 
 func newFakeDefaults(entries map[string]PreferenceEntry) *fakeDefaults {
@@ -20,7 +21,7 @@ func newFakeDefaults(entries map[string]PreferenceEntry) *fakeDefaults {
 	for name, entry := range entries {
 		copy[name] = entry
 	}
-	return &fakeDefaults{preferences: copy}
+	return &fakeDefaults{preferences: copy, missingText: "does not exist"}
 }
 
 func (fake *fakeDefaults) run(_ context.Context, name string, args ...string) ([]byte, error) {
@@ -35,7 +36,7 @@ func (fake *fakeDefaults) run(_ context.Context, name string, args ...string) ([
 	switch command {
 	case "read-type":
 		if !present || !entry.Present {
-			return []byte("does not exist"), errors.New("exit status 1")
+			return []byte(fake.missingText), errors.New("exit status 1")
 		}
 		if preferenceSpecs[key] == preferenceBoolean {
 			return []byte("Type is boolean\n"), nil
@@ -43,7 +44,7 @@ func (fake *fakeDefaults) run(_ context.Context, name string, args ...string) ([
 		return []byte("Type is string\n"), nil
 	case "read":
 		if !present || !entry.Present {
-			return []byte("does not exist"), errors.New("exit status 1")
+			return []byte(fake.missingText), errors.New("exit status 1")
 		}
 		if value, ok := entry.Value.(bool); ok {
 			if value {
@@ -54,7 +55,7 @@ func (fake *fakeDefaults) run(_ context.Context, name string, args ...string) ([
 		return []byte(entry.Value.(string) + "\n"), nil
 	case "delete":
 		if !present || !entry.Present {
-			return []byte("does not exist"), errors.New("exit status 1")
+			return []byte(fake.missingText), errors.New("exit status 1")
 		}
 		fake.preferences[key] = PreferenceEntry{Present: false}
 		return nil, nil
@@ -171,6 +172,30 @@ func TestApplyWithBackupAndRollback(t *testing.T) {
 	}
 	if fake.preferences["DVTTextShowMinimap"].Value != false {
 		t.Fatal("preference not restored")
+	}
+}
+
+func TestApplyAcceptsMissingDefaultsDomain(t *testing.T) {
+	layout := testLayout(t)
+	fake := newFakeDefaults(blankPreferences())
+	fake.missingText = "Domain (com.apple.dt.Xcode) not found.\nDefaults have not been changed."
+	content := Content{Preferences: blankPreferences(), Files: map[string]FileEntry{}}
+
+	if err := ApplyContent(context.Background(), layout, content, fake.run); err != nil {
+		t.Fatalf("missing defaults domain should be an absent preference: %v", err)
+	}
+}
+
+func TestMissingDefaultDetectionIsDomainSpecific(t *testing.T) {
+	err := errors.New("exit status 1")
+	if !isMissingDefault([]byte("does not exist"), err) {
+		t.Fatal("missing key was not detected")
+	}
+	if !isMissingDefault([]byte("Domain (com.apple.dt.Xcode) not found."), err) {
+		t.Fatal("missing Xcode domain was not detected")
+	}
+	if isMissingDefault([]byte("Domain (com.example.Other) not found."), err) {
+		t.Fatal("unrelated missing domain was accepted")
 	}
 }
 

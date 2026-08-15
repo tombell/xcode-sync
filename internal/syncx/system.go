@@ -148,5 +148,6 @@ func readManagedFiles(layout Layout) (map[string]FileEntry, error) {
 
 func isMissingDefault(output []byte, err error) bool {
 	text := string(output) + " " + err.Error()
-	return strings.Contains(text, "does not exist")
+	return strings.Contains(text, "does not exist") ||
+		strings.Contains(text, "Domain ("+preferencesDomain+") not found.")
 }
